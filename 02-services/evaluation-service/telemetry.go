@@ -23,9 +23,10 @@ func initTracerProvider(
 		endpoint = "http://localhost:4318"
 	}
 
+	traceEndpoint := endpoint + "/v1/traces"
 	exporter, err := otlptracehttp.New(
 		ctx,
-		otlptracehttp.WithEndpointURL(endpoint),
+		otlptracehttp.WithEndpointURL(traceEndpoint),
 	)
 	if err != nil {
 		return nil, fmt.Errorf(
