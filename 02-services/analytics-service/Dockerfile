@@ -9,7 +9,7 @@ RUN adduser --system --group LucasDev && \
     chown -R LucasDev:LucasDev /app
 USER LucasDev
 EXPOSE 8005
-CMD ["gunicorn", "--workers", "1", "--threads", "2", "--bind", "0.0.0.0:8005", "app:app"]
+CMD ["opentelemetry-instrument", "gunicorn", "--workers", "1", "--threads", "2", "--bind", "0.0.0.0:8005", "app:app"]
 
 
 
