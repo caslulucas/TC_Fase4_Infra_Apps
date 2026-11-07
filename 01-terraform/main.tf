@@ -31,7 +31,8 @@ module "ecr" {
     "flag",
     "targeting",
     "evaluation",
-    "analytics"
+    "analytics",
+    "self-healing",
   ]
 }
 
