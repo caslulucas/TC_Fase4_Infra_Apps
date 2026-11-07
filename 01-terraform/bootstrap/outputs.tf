@@ -1,3 +1,4 @@
 output "bucket_name" {
-  value = aws_s3_bucket.tfstate.bucket
+  description = "Bucket S3 utilizado pelo Terraform Remote State"
+  value       = aws_s3_bucket.tfstate.bucket
 }

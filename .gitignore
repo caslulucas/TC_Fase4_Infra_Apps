@@ -1,1 +1,8 @@
 01-terraform/environments/academy/academy.tfvars
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log

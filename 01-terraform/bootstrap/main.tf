@@ -2,10 +2,46 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Bucket utilizado pelo Terraform State
+# =====================================================================
+# TERRAFORM REMOTE STATE
+# =====================================================================
+
 resource "aws_s3_bucket" "tfstate" {
-  bucket = "togglemaster-terraform-state"
+  bucket = var.bucket_name
+
   tags = {
-    Name = "togglemaster-terraform-state"
+    Name    = var.bucket_name
+    Project = "togglemaster"
+    Purpose = "terraform-state"
   }
+}
+
+# Mantém versões anteriores do terraform.tfstate
+resource "aws_s3_bucket_versioning" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# Criptografia do State em repouso
+resource "aws_s3_bucket_server_side_encryption_configuration" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+# Impede exposição pública acidental do Terraform State
+resource "aws_s3_bucket_public_access_block" "tfstate" {
+  bucket = aws_s3_bucket.tfstate.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
