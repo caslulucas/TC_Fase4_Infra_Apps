@@ -1,808 +1,220 @@
-# Roteiro Privado - Tech Challenge Fase 4
+# 🚀 ToggleMaster — Tech Challenge Fase 4
 
-> Material pessoal de apoio à gravação.  
-> Não utilizar como entregável.
+## Infraestrutura, Microsserviços, DevSecOps e OpenTelemetry
+
+Projeto desenvolvido para o **Tech Challenge Fase 4 da Pós-Tech FIAP — DevOps & Arquitetura Cloud**.
+
+A Fase 4 representa a evolução do ToggleMaster para um cenário de **Observabilidade Total e Resposta Ativa**, preservando a infraestrutura, os microsserviços, CI/CD, DevSecOps e GitOps construídos nas fases anteriores.
+
+Este repositório concentra principalmente:
+
+- Código-fonte dos microsserviços
+- Instrumentação OpenTelemetry
+- Dockerfiles
+- Pipelines CI/CD e DevSecOps
+- Infrastructure as Code com Terraform
+- Recursos AWS
+- Imagem e código da automação de Self-Healing
+
+> O estado desejado do Kubernetes e toda a stack GitOps estão mantidos em um repositório separado: `TC_Fase4_GitOps`.
 
 ---
 
-# 1. Estratégia do vídeo
+# 📖 Visão Geral
 
-O foco é a **Fase 4**.
+O **ToggleMaster** é uma plataforma distribuída para gerenciamento e avaliação de Feature Flags.
 
-A Fase 3 deve aparecer apenas como contexto.
+A plataforma é composta por cinco microsserviços:
 
-Estrutura:
+| Serviço | Responsabilidade | Tecnologia principal |
+|---|---|---|
+| **Auth** | Autenticação e gerenciamento de API Keys | Go + PostgreSQL |
+| **Flag** | CRUD e gerenciamento das Feature Flags | Python/Flask + PostgreSQL |
+| **Targeting** | Regras de segmentação de usuários | Python/Flask + PostgreSQL |
+| **Evaluation** | Avaliação das Feature Flags, hot path da plataforma | Go + Redis |
+| **Analytics** | Processamento assíncrono dos eventos de avaliação | Python + SQS + DynamoDB |
+
+O fluxo principal é:
 
 ```text
-Contexto rápido
-    │
-    ▼
-Problema da Fase 4
-    │
-    ▼
-Arquitetura de Observabilidade
-    │
-    ▼
-OpenTelemetry
-    │
-    ▼
-Prometheus + Loki + Grafana
-    │
-    ▼
-New Relic
-    │
-    ▼
+Cliente
+   │
+   ▼
+Evaluation
+   │
+   ├────► Redis
+   │
+   ├────► Flag ─────────► Auth
+   │
+   ├────► Targeting ─────► Auth
+   │
+   ▼
+Decisão da Feature Flag
+   │
+   ├────► Resposta ao cliente
+   │
+   └────► Amazon SQS
+               │
+               ▼
+           Analytics
+               │
+               ▼
+           DynamoDB
+```
+
+---
+
+# 🎯 Objetivo da Fase 4
+
+Nas fases anteriores, o ToggleMaster evoluiu de um MVP monolítico para uma arquitetura baseada em microsserviços, Kubernetes, Infrastructure as Code, DevSecOps e GitOps.
+
+Na Fase 4 o novo desafio passa a ser operacional:
+
+> Como identificar rapidamente uma degradação em um ambiente distribuído, descobrir sua causa e reagir automaticamente a uma condição crítica?
+
+Para responder a esse problema foram implementados:
+
+```text
+Métricas
++
+Logs centralizados
++
+Distributed Tracing
++
+APM
++
 Alerting
-    │
-    ▼
-PagerDuty + Discord
-    │
-    ▼
++
+Incident Management
++
+ChatOps
++
 Self-Healing
-    │
-    ▼
-HandsOn AWS
 ```
 
 ---
 
-# 2. Tempo sugerido
-
-| Bloco | Tempo |
-|---|---:|
-| Introdução | 1 min |
-| Resumo Fase 3 | 1 min |
-| Problema + arquitetura Fase 4 | 2 min |
-| OTel + métricas + logs | 3 min |
-| APM + Tracing | 2 min |
-| Alerting + Self-Healing | 2 min |
-| AWS/EKS/ArgoCD | 3 min |
-| Grafana/Loki/OTel | 3 min |
-| New Relic | 3 min |
-| Prova Real | 4 min |
-| Encerramento | 1 min |
-
-Meta:
+# 🏗️ Arquitetura Geral
 
 ```text
-23 a 24,5 minutos
+                         TOGGLEMASTER
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+            Logs           Metrics          Traces
+              │               │               │
+              ▼               │               │
+         OTel Agent           │               │
+              │               │               │
+              └───────────────┼───────────────┘
+                              │
+                              ▼
+                    OpenTelemetry Collector
+                              │
+              ┌───────────────┼───────────────┐
+              │               │               │
+              ▼               ▼               ▼
+            Loki         Span Metrics      New Relic
+              │               │               │
+              │               ▼               │
+              │           Prometheus           │
+              │               │               │
+              └───────┬───────┘               │
+                      │                       │
+                      ▼                       ▼
+                    Grafana              APM / Tracing
+                      │
+                      ▼
+                Grafana Alerting
+                 ╱      │       ╲
+                ▼       ▼        ▼
+           PagerDuty  Discord  Self-Healing
+                                │
+                                ▼
+                          Kubernetes API
+                                │
+                                ▼
+                         Evaluation Service
 ```
 
 ---
 
-# PARTE 1
-# EXPLICAÇÃO DA FASE 4
+# 🔭 OpenTelemetry
 
----
+O **OpenTelemetry** foi utilizado como padrão de instrumentação e transporte da telemetria.
 
-# 3. Abertura
-
-## Na tela
-
-Abrir:
+O objetivo é evitar que os microsserviços fiquem diretamente acoplados aos backends de observabilidade.
 
 ```text
-README_FASE4.md
+Microsserviços
+      │
+      ▼
+OpenTelemetry
+      │
+      ▼
+OTel Collector
+      │
+      ├────► Prometheus
+      ├────► Loki
+      └────► New Relic
 ```
 
-no VS Code.
+Os microsserviços utilizam bibliotecas OpenTelemetry específicas para Go e Python.
 
-## Falar
-
-> "Olá, meu nome é Lucas Soares dos Santos, RM 373842, e este é o Tech Challenge da Fase 4 da Pós-Tech FIAP.
->
-> Esta fase conclui o projeto ToggleMaster e o foco agora é Observabilidade Total e Resposta Ativa.
->
-> Antes de iniciar a demonstração prática, vou explicar a arquitetura implementada nesta fase, como métricas, logs e traces percorrem o ambiente e como um alerta pode gerar automaticamente um incidente, uma notificação ChatOps e uma ação de Self-Healing.
->
-> O ambiente AWS utilizado anteriormente foi excluído. Na parte prática vou iniciar um novo AWS Academy e reconstruir a base necessária via Terraform, mas a apresentação será concentrada principalmente nas novas funcionalidades da Fase 4."
+O contexto da requisição é propagado entre os serviços, permitindo que diferentes operações sejam correlacionadas através do mesmo **Trace ID**.
 
 ---
 
-# 4. Contexto da Fase 3
+# 🔎 Distributed Tracing
 
-## Máximo 1 minuto
-
-## Falar
-
-> "Como contexto, o ToggleMaster já possuía cinco microsserviços conteinerizados: Auth, Flag, Targeting, Evaluation e Analytics.
->
-> A infraestrutura já era definida com Terraform, as imagens passavam por pipelines CI/CD com DevSecOps e eram armazenadas no ECR, e a implantação no EKS era controlada por GitOps com ArgoCD.
->
-> Eu não vou reapresentar essa implementação em detalhes porque o foco deste vídeo é a evolução realizada na Fase 4."
-
-Mostrar rapidamente:
-
-```text
-Terraform -> AWS / EKS
-GitHub Actions -> ECR
-GitOps -> ArgoCD -> EKS
-```
-
-E seguir.
-
----
-
-# 5. Problema novo da Fase 4
-
-## Falar
-
-> "O novo problema é operacional.
->
-> Em um ambiente distribuído, um pod estar Running não significa necessariamente que a aplicação está saudável.
->
-> Um serviço pode ficar lento, aumentar o consumo de recursos, retornar erros ou falhar silenciosamente."
-
-Mostrar:
-
-```text
-Metrics -> o que está acontecendo?
-Logs    -> o que foi registrado?
-Traces  -> por onde a operação passou?
-```
-
-> "Depois de detectar o problema, precisamos também reagir. A Fase 4 acrescenta incident management, ChatOps e Self-Healing."
-
----
-
-# 6. Arquitetura completa
-
-Mostrar o diagrama principal do README.
-
-Explicar de cima para baixo:
-
-```text
-Logs
- -> OTel Agent
- -> Collector
- -> Loki
-
-Traces
- -> Collector
- -> New Relic
-
-Traces
- -> Span Metrics
- -> Prometheus
-
-Prometheus + Loki
- -> Grafana
-
-Grafana Firing
- -> PagerDuty
- -> Discord
- -> Self-Healing
-```
-
-## Frase principal
-
-> "O objetivo é construir uma cadeia que começa na geração da telemetria e termina, se necessário, numa ação corretiva."
-
----
-
-# 7. OpenTelemetry
-
-## Falar
-
-> "OpenTelemetry não é um banco de métricas ou logs.
->
-> OTel é o padrão utilizado para instrumentar as aplicações e transportar a telemetria."
-
-> "A vantagem é reduzir acoplamento. Os serviços produzem telemetria padronizada e o Collector decide para qual backend enviar cada sinal."
-
----
-
-# 8. Collector
-
-## Falar
-
-> "O Collector é o gateway central.
->
-> Logs seguem para Loki.
->
-> Traces seguem para New Relic.
->
-> E esses mesmos traces também alimentam Span Metrics para gerar métricas no Prometheus."
-
-Ponto de domínio:
-
-> "Se futuramente eu decidir trocar o backend de APM, boa parte da mudança pode ficar concentrada no Collector."
-
----
-
-# 9. OTel Agent e DaemonSet
-
-## Falar
-
-> "Logs possuem uma característica diferente. Eles existem fisicamente nos Nodes Kubernetes.
->
-> Por isso foi utilizado um OTel Agent em DaemonSet."
-
-Explique:
-
-> "DaemonSet garante uma instância do Agent em cada Node."
-
-Mostrar:
-
-```text
-Node A -> Agent
-Node B -> Agent
-Node C -> Agent
-```
-
-> "Cada Agent lê `/var/log/pods`, adiciona atributos Kubernetes e envia os registros ao Collector central."
-
----
-
-# 10. Prometheus e Span Metrics
-
-## Falar
-
-> "Prometheus recebe as métricas de infraestrutura e também métricas da aplicação."
-
-> "Para request rate e latência, utilizei Span Metrics."
-
-Explicar:
-
-> "Em vez de criar uma segunda instrumentação completamente separada para métricas, os spans usados no tracing são convertidos em contadores e histogramas."
-
-Query:
-
-```promql
-sum by (service_name) (
-  rate(traces_span_metrics_calls_total[5m])
-)
-```
-
-Explicar:
-
-> "Essa query calcula a taxa de crescimento do contador numa janela de cinco minutos e agrupa pelo nome do serviço."
-
----
-
-# 11. Loki
-
-## Falar
-
-> "Loki centraliza os logs que antes estariam distribuídos em vários pods."
-
-> "Como o OTel adiciona metadados Kubernetes, eu consigo pesquisar por namespace, pod, container ou serviço."
-
----
-
-# 12. Grafana
-
-## Falar
-
-> "Grafana concentra a visualização da stack Open Source."
-
-Dashboard:
-
-```text
-ToggleMaster Observability
-```
-
-Explicar rapidamente:
-
-### Running Pods
-
-> "Quantidade de pods ativos."
-
-### CPU
-
-> "Pressão computacional."
-
-### Memory
-
-> "Pressão de memória."
-
-### Request Rate
-
-> "Volume de chamadas por microsserviço."
-
-### P95
-
-> "Latência de cauda."
-
-### Live Logs
-
-> "Logs centralizados pelo Loki."
-
----
-
-# 13. Explicar P95
-
-## Falar
-
-> "P95 é mais interessante do que apenas a média em muitos cenários.
->
-> Aproximadamente 95% das observações ficam abaixo daquele valor.
->
-> Isso ajuda a encontrar requisições lentas que poderiam ficar mascaradas pela média."
-
----
-
-# 14. Instrumentação e tracing
-
-## Falar
-
-> "Os microsserviços foram instrumentados com OpenTelemetry.
->
-> Uma requisição recebida cria um Span e o contexto é propagado para as dependências."
-
----
-
-# 15. Trace x Span
-
-## Falar
-
-> "Trace e Span não são a mesma coisa."
-
-```text
-Trace = operação completa
-Span  = uma etapa
-```
+O Distributed Tracing permite acompanhar o caminho executado por uma requisição através da arquitetura distribuída.
 
 Exemplo:
 
 ```text
-Trace
- ├── Evaluation
- ├── Evaluation -> Flag
- ├── Flag
- ├── Flag -> Auth
- ├── Evaluation -> Targeting
- └── Targeting
+Evaluation
+   │
+   ├────► Flag
+   │        │
+   │        └────► Auth
+   │
+   └────► Targeting
+            │
+            └────► Auth
 ```
 
----
-
-# 16. New Relic
-
-## Falar
-
-> "New Relic foi escolhido como APM porque possui integração com OpenTelemetry/OTLP e oferece Distributed Tracing e Service Map."
-
----
-
-# 17. Trace x Service Map
-
-## Falar
-
-> "Distributed Trace mostra uma execução específica."
-
-> "Service Map apresenta uma visão agregada das dependências observadas."
-
-Na demonstração:
+O fluxo assíncrono também envolve:
 
 ```text
-Auth
-Flag
-Targeting
 Evaluation
+   │
+   ▼
+Amazon SQS
+   │
+   ▼
 Analytics
+   │
+   ▼
+DynamoDB
 ```
 
-precisam aparecer no mapa.
+Os traces são enviados para o OpenTelemetry Collector e posteriormente exportados para o New Relic.
 
 ---
 
-# 18. Analytics
+# 📊 Span Metrics
 
-## Falar
+Além de Distributed Tracing, os spans são reutilizados para produzir métricas de aplicação.
 
-> "Analytics possui um fluxo diferente porque trabalha de forma assíncrona."
+O **Span Metrics Connector** transforma traces em métricas Prometheus.
 
-```text
-Evaluation
- -> SQS
- -> Analytics
- -> DynamoDB
+Exemplo:
+
+```promql
+traces_span_metrics_calls_total
 ```
 
-> "A vantagem é não adicionar o tempo de processamento analítico ao tempo de resposta da avaliação."
-
----
-
-# 19. Alerting
-
-## Falar
-
-> "A próxima evolução é deixar de depender de alguém olhando o dashboard."
-
-Fluxo:
-
-```text
-Normal
- ↓
-Pending
- ↓
-Firing
-```
-
-### Explicar Pending
-
-> "Pending evita reagir imediatamente a um pico transitório. A condição precisa continuar verdadeira durante um período definido."
-
----
-
-# 20. PagerDuty
-
-## Falar
-
-> "Em Firing, um Contact Point envia o evento ao PagerDuty."
-
-> "O PagerDuty transforma o alerta técnico em um incidente operacional rastreável."
-
----
-
-# 21. Discord
-
-## Falar
-
-> "Outro receiver envia a mesma condição ao Discord para ChatOps."
-
-> "Isso aproxima a informação do canal acompanhado pela equipe."
-
----
-
-# 22. Self-Healing
-
-## Falar
-
-> "A terceira saída é o Self-Healing."
-
-> "O serviço foi desenvolvido em Python/Flask e roda dentro do cluster Kubernetes."
-
-> "Ele utiliza uma ServiceAccount e RBAC de privilégio mínimo."
-
-Ação:
-
-```text
-Webhook
- ↓
-Self-Healing
- ↓
-Kubernetes API
- ↓
-Patch Deployment
- ↓
-Novo ReplicaSet
- ↓
-Novo Pod
-```
-
----
-
-# 23. RBAC
-
-## Falar
-
-> "A automação não recebe acesso administrativo ao cluster."
-
-> "O RBAC limita as operações que o ServiceAccount pode realizar."
-
-Isso mostra preocupação com segurança operacional.
-
----
-
-# 24. Cooldown
-
-## Falar
-
-> "Durante os testes identifiquei um restart storm."
-
-> "Como a condição permanecia Firing, múltiplas notificações provocavam vários restarts."
-
-Correção:
-
-```text
-Cooldown = 600 segundos
-```
-
-> "O primeiro evento executa o healing. Eventos seguintes dentro da janela são ignorados."
-
-Frase importante:
-
-> "Self-Healing é mitigação inicial, não substitui causa raiz."
-
----
-
-# 25. Resumo antes da prática
-
-Falar pausadamente:
-
-> "Resumindo a arquitetura da Fase 4:
->
-> os microsserviços produzem telemetria com OpenTelemetry;
->
-> Agents coletam logs em cada Node;
->
-> o Collector central processa e roteia os sinais;
->
-> Loki centraliza logs;
->
-> Prometheus armazena métricas;
->
-> New Relic fornece tracing e mapa de dependências;
->
-> Grafana centraliza visualização e alerting;
->
-> e em uma condição crítica PagerDuty, Discord e Self-Healing são acionados automaticamente."
-
-Transição:
-
-> "Agora vou reconstruir rapidamente a base AWS necessária e demonstrar essa arquitetura funcionando."
-
----
-
-# PARTE 2
-# PREPARAÇÃO OPERACIONAL ANTES DE GRAVAR
-
-Esta parte deve estar pronta **antes de iniciar a demonstração prática**.
-
----
-
-# 26. Terminais recomendados
-
-Usar terminais separados.
-
-```text
-Terminal 1 -> INFRA_APPS / Terraform / AWS
-Terminal 2 -> GITOPS / kubectl
-Terminal 3 -> ArgoCD port-forward
-Terminal 4 -> Grafana port-forward
-Terminal 5 -> Loki ou Prometheus, quando necessário
-Terminal 6 -> Self-Healing logs
-Terminal 7 -> Pod Watch
-```
-
-Não tente reutilizar o mesmo terminal durante a Prova Real.
-
----
-
-# 27. Terminal 1: INFRA_APPS
-
-Abrir:
-
-```bash
-cd ~/TC_Fase4_Infra_Apps
-```
-
-Validar:
-
-```bash
-git status
-```
-
-Depois:
-
-```bash
-cd ~/TC_Fase4_Infra_Apps/01-terraform
-```
-
-Quando AWS Academy estiver ativo, carregar as credenciais temporárias sem exibi-las no vídeo.
-
-Confirmar:
-
-```bash
-aws sts get-caller-identity
-```
-
----
-
-# 28. Terraform
-
-Executar:
-
-```bash
-terraform init
-```
-
-```bash
-terraform fmt -check -recursive
-```
-
-```bash
-terraform validate
-```
-
-```bash
-terraform plan \
-  -var-file="environments/academy/academy.tfvars"
-```
-
-Depois de revisar:
-
-```bash
-terraform apply \
-  -var-file="environments/academy/academy.tfvars"
-```
-
-Se o `apply` demorar muito durante a gravação:
-
-1. mostrar início;
-2. pausar/cortar a espera;
-3. retomar mostrando resultado.
-
----
-
-# 29. Kubeconfig EKS
-
-Depois da criação:
-
-```bash
-aws eks update-kubeconfig \
-  --region us-east-1 \
-  --name togglemaster-academy
-```
-
-Confirmar:
-
-```bash
-kubectl get nodes
-```
-
----
-
-# 30. Terminal 2: GITOPS
-
-```bash
-cd ~/TC_Fase4_GitOps
-```
-
-Executar antes da demonstração:
-
-```bash
-git status
-```
-
-```bash
-kubectl config current-context
-```
-
-```bash
-kubectl get nodes
-```
-
-```bash
-kubectl get pods -A
-```
-
----
-
-# 31. Validar microsserviços
-
-```bash
-kubectl get pods -A \
-  | grep -E "auth|flag|targeting|evaluation|analytics"
-```
-
-Precisamos ver os cinco workloads funcionando.
-
----
-
-# 32. Validar observabilidade
-
-```bash
-kubectl get pods -n monitoring
-```
-
-Esperado:
-
-```text
-Grafana
-Loki
-Prometheus
-OTel Collector
-OTel Agent
-Self-Healing
-```
-
----
-
-# 33. Validar ArgoCD
-
-```bash
-kubectl get applications -n argocd
-```
-
-Objetivo:
-
-```text
-Synced
-Healthy
-```
-
----
-
-# 34. Terminal 3: ArgoCD
-
-Deixar aberto:
-
-```bash
-kubectl port-forward \
-  svc/argocd-server \
-  -n argocd \
-  8080:443
-```
-
-Navegador:
-
-```text
-https://localhost:8080
-```
-
-Não fechar o terminal durante a demonstração.
-
----
-
-# 35. Terminal 4: Grafana
-
-Deixar aberto:
-
-```bash
-kubectl port-forward \
-  svc/grafana \
-  -n monitoring \
-  3000:80
-```
-
-Navegador:
-
-```text
-http://localhost:3000
-```
-
-Abrir previamente:
-
-```text
-Dashboards
- -> ToggleMaster Observability
-```
-
----
-
-# 36. Terminal 5: Loki, se necessário
-
-```bash
-kubectl port-forward \
-  svc/loki \
-  -n monitoring \
-  3100:3100
-```
-
-Teste:
-
-```bash
-curl -s \
-  http://localhost:3100/loki/api/v1/labels
-```
-
-Query para Grafana:
-
-```logql
-{k8s_namespace_name=~"auth|flag|targeting|evaluation|analytics"}
-```
-
----
-
-# 37. Prometheus, se quiser demonstrar query diretamente
-
-```bash
-kubectl port-forward \
-  svc/prometheus-kube-prometheus-prometheus \
-  -n monitoring \
-  9090:9090
-```
-
-Abrir:
-
-```text
-http://localhost:9090
-```
-
-Query:
+Request rate por serviço:
 
 ```promql
 sum by (service_name) (
@@ -810,535 +222,456 @@ sum by (service_name) (
 )
 ```
 
----
-
-# 38. Abrir ferramentas externas antes da Prova Real
-
-Deixar abertas abas separadas:
-
-### New Relic
-
-Abrir:
+Durante a validação foram observadas métricas provenientes dos cinco microsserviços:
 
 ```text
-APM / Services
-Traces
-Service Map
+auth-service
+flag-service
+targeting-service
+evaluation-service
+analytics-service
 ```
 
-### PagerDuty
+---
 
-Abrir página de:
+# ☁️ Infraestrutura AWS
+
+Toda a infraestrutura é provisionada utilizando **Terraform**.
+
+## Networking
+
+- Amazon VPC
+- Subnets públicas
+- Subnets privadas
+- Internet Gateway
+- NAT Gateway
+- Route Tables
+- Security Groups
+
+## Kubernetes
+
+- Amazon EKS
+- Managed Node Groups
+
+## Persistência
+
+- 3x Amazon RDS PostgreSQL
+  - Auth
+  - Flag
+  - Targeting
+- Amazon ElastiCache Redis
+- Amazon DynamoDB
+
+## Mensageria
+
+- Amazon SQS
+
+## Container Registry
+
+- Amazon ECR
+
+Repositórios utilizados:
 
 ```text
-Incidents
+togglemaster-auth
+togglemaster-flag
+togglemaster-targeting
+togglemaster-evaluation
+togglemaster-analytics
+togglemaster-self-healing
 ```
 
-### Discord
+## Terraform State
 
-Abrir:
+O `terraform.tfstate` da infraestrutura principal utiliza backend remoto no Amazon S3.
+
+---
+
+# 📁 Estrutura Terraform
 
 ```text
-#togglemaster-alerts
+01-terraform/
+│
+├── bootstrap/
+│   ├── main.tf
+│   ├── outputs.tf
+│   ├── variables.tf
+│   └── versions.tf
+│
+├── environments/
+│   ├── academy/
+│   └── personal/
+│
+├── modules/
+│   ├── vpc/
+│   ├── eks/
+│   ├── rds/
+│   ├── redis/
+│   ├── dynamodb/
+│   ├── sqs/
+│   └── ecr/
+│
+├── backend.tf
+├── locals.tf
+├── main.tf
+├── outputs.tf
+├── providers.tf
+├── variables.tf
+└── versions.tf
 ```
 
-### Grafana
+A organização modular permite reutilização, manutenção e reconstrução completa do ambiente.
 
-Abrir:
+---
+
+# 🎓 AWS Academy
+
+O projeto possui compatibilidade específica com o AWS Academy.
+
+Devido às restrições de IAM do ambiente acadêmico, o Terraform não cria novas Roles ou Policies quando executado em:
 
 ```text
-Alerting
- -> Alert rules
+environment = academy
 ```
 
----
-
-# 39. Terminal 6: Self-Healing
-
-Deixar rodando antes de provocar o problema:
-
-```bash
-kubectl logs -n monitoring \
-  deployment/togglemaster-self-healing \
-  -f
-```
-
-Esse terminal deve permanecer limpo.
-
-Não executar outros comandos nele durante a prova.
-
----
-
-# 40. Terminal 7: Pod Watch
-
-Para o workload escolhido como alvo do Self-Healing.
-
-Exemplo Evaluation:
-
-```bash
-kubectl get pods -n evaluation -w
-```
-
-Se a label estiver configurada:
-
-```bash
-kubectl get pods -n evaluation \
-  -l app=evaluation \
-  -w
-```
-
-Precisamos conseguir mostrar claramente:
+Nesse cenário é reutilizada a:
 
 ```text
-pod antigo -> Terminating
-pod novo   -> Running
+LabRole
 ```
+
+para:
+
+- EKS Cluster
+- Managed Node Groups
+
+Credenciais temporárias do AWS Academy não são versionadas no repositório.
 
 ---
 
-# 41. Validar RBAC antes de gravar
+# 🔐 DevSecOps
 
-Antes da gravação final:
+Os pipelines GitHub Actions incorporam controles de qualidade e segurança antes da publicação das imagens.
 
-```bash
-kubectl auth can-i patch \
-  deployment/evaluation-deployment \
-  -n evaluation \
-  --as=system:serviceaccount:monitoring:togglemaster-self-healing
-```
-
-Esperado:
+Fluxo:
 
 ```text
-yes
+Código
+  │
+  ├────► Build
+  ├────► Unit Tests
+  ├────► Lint
+  ├────► SAST
+  ├────► SCA
+  ├────► Docker Build
+  └────► Container Scan
+              │
+              ▼
+          Amazon ECR
 ```
 
-Se retornar `no`, não iniciar a Prova Real.
+Ferramentas utilizadas incluem:
+
+- GitHub Actions
+- Trivy
+- Gosec
+- Bandit
+- GolangCI-Lint
+- Docker
 
 ---
 
-# 42. Gerar requisição para tracing
+# 🐳 Containers
 
-Utilizar endpoint real do Evaluation:
+Cada microsserviço possui sua própria imagem Docker.
 
-```bash
-curl -i \
-  "<ENDPOINT-EVALUATION>/evaluate?user_id=video-demo&flag_name=<FLAG-DEMO>"
-```
+Na Fase 4 as imagens também incluem os componentes necessários à instrumentação OpenTelemetry.
 
-Esperado:
+Fluxo:
 
 ```text
-HTTP 200
+Código-fonte
+    │
+    ▼
+Docker Build
+    │
+    ▼
+Security Scan
+    │
+    ▼
+Amazon ECR
+    │
+    ▼
+GitOps
+    │
+    ▼
+Amazon EKS
 ```
-
-Depois acessar New Relic e localizar trace recente.
 
 ---
 
-# 43. Gerar tráfego para o dashboard
+# 🧠 Self-Healing
 
-Se necessário:
+A Fase 4 adiciona uma automação própria de **Self-Healing**.
 
-```bash
-for i in $(seq 1 20); do
-  curl -s \
-    "<ENDPOINT-EVALUATION>/evaluate?user_id=video-$i&flag_name=<FLAG-DEMO>" \
-    > /dev/null
+O serviço recebe um webhook do Grafana quando um alerta chega ao estado `Firing`.
 
-  sleep 1
-done
-```
-
-Isso ajuda a criar atividade visível em Request Rate e tracing.
-
----
-
-# PARTE 3
-# ORDEM DA DEMONSTRAÇÃO PRÁTICA
-
----
-
-# 44. AWS Academy
-
-Mostrar rapidamente:
-
-```bash
-aws sts get-caller-identity
-```
-
-Sem mostrar chaves.
-
-Mostrar Terraform:
+Fluxo:
 
 ```text
-init
-validate
-plan
-apply
-```
-
-Depois mostrar recursos prontos.
-
-Não gastar vários minutos no Console AWS.
-
----
-
-# 45. EKS
-
-```bash
-kubectl get nodes
-```
-
-Falar:
-
-> "A base necessária foi reconstruída e agora o foco passa para a stack da Fase 4."
-
----
-
-# 46. ArgoCD
-
-Mostrar:
-
-```text
-Auth
-Flag
-Targeting
-Evaluation
-Analytics
-Prometheus
-Loki
-Grafana
-OTel Collector
-OTel Agent
+Grafana Firing
+      │
+      ▼
+Webhook /heal
+      │
+      ▼
 Self-Healing
+      │
+      ▼
+Kubernetes API
+      │
+      ▼
+Patch no Deployment
+      │
+      ▼
+Novo ReplicaSet
+      │
+      ▼
+Novo Pod
 ```
 
-Mostrar estados:
+Na validação final, o alvo utilizado foi:
 
 ```text
-Synced
-Healthy
+namespace: evaluation
+deployment: evaluation-deployment
 ```
 
 ---
 
-# 47. Grafana
+# 🛡️ Segurança do Self-Healing
 
-Abrir:
+O serviço utiliza:
+
+- ServiceAccount
+- Role
+- RoleBinding
+
+A permissão utiliza o princípio do menor privilégio.
+
+A automação possui apenas:
 
 ```text
-ToggleMaster Observability
+get
+patch
 ```
 
-Explicar rapidamente os seis painéis.
-
-Fala:
-
-> "Aqui consigo correlacionar saúde do cluster, comportamento dos microsserviços e logs."
-
----
-
-# 48. Loki
-
-Abrir painel de logs ou Explore.
-
-Mostrar logs reais.
-
-Fala:
-
-> "Esses registros saíram dos pods, foram coletados pelos Agents, passaram pelo Collector e foram centralizados no Loki."
-
----
-
-# 49. OTel
-
-Mostrar rapidamente no GitOps/ArgoCD:
+sobre:
 
 ```text
-otel-agent
-otel-collector
+evaluation-deployment
 ```
 
-Fala:
-
-> "Agents realizam a coleta distribuída e o Collector concentra processamento e roteamento."
-
-Não gastar muito tempo lendo YAML.
-
----
-
-# 50. New Relic
-
-Mostrar primeiro:
+no namespace:
 
 ```text
-Service Map
+evaluation
 ```
 
-Cinco serviços.
-
-Depois executar chamada ao Evaluation.
-
-Abrir trace.
-
-Falar:
-
-> "Agora saio da topologia agregada para analisar uma execução específica."
-
-Mostrar:
-
-- Trace ID;
-- Spans;
-- serviços;
-- duração;
-- relações pai/filho.
-
 ---
 
-# 51. Preparar a Prova Real
+# ⏳ Cooldown
 
-Antes de provocar a falha:
-
-### Tela 1
-
-Grafana Alert Rules.
-
-### Tela 2
-
-PagerDuty Incidents.
-
-### Tela 3
-
-Discord.
-
-### Terminal
-
-Self-Healing logs.
-
-### Terminal
-
-Pod Watch.
-
-Não provocar a falha antes de tudo estar visível.
-
----
-
-# 52. Provocar o problema
-
-Usar apenas mecanismo já testado anteriormente.
-
-Objetivo:
+Para evitar um **restart storm**, foi implementado cooldown de:
 
 ```text
-Normal
-  ↓
-Pending
-  ↓
-Firing
+600 segundos
 ```
 
----
-
-# 53. Mostrar Grafana Firing
-
-Fala:
-
-> "A condição permaneceu acima do limite configurado e a regra chegou a Firing."
-
----
-
-# 54. Mostrar PagerDuty
-
-Fala:
-
-> "O mesmo evento abriu automaticamente um incidente no PagerDuty."
-
----
-
-# 55. Mostrar Discord
-
-Fala:
-
-> "Em paralelo, o alerta foi encaminhado ao canal ChatOps."
-
----
-
-# 56. Mostrar Self-Healing
-
-No terminal:
+Fluxo:
 
 ```text
-SELF-HEALING triggered
+Primeiro alerta Firing
+       │
+       ▼
+Self-Healing executado
+       │
+       ▼
+Pod reiniciado
+
+Novos alertas dentro de 600s
+       │
+       ▼
+Evento ignorado
 ```
-
-Falar:
-
-> "O terceiro receiver acionou a automação de Self-Healing."
 
 ---
 
-# 57. Mostrar restart
+# 🔄 Integração com GitOps
 
-Terminal Pod Watch:
+Este repositório contém a aplicação, infraestrutura e componentes de automação.
+
+O estado desejado do Kubernetes fica no repositório:
 
 ```text
-old pod -> Terminating
-new pod -> Running
+TC_Fase4_GitOps
 ```
 
-Falar:
-
-> "A recuperação ocorreu sem executar manualmente kubectl rollout restart."
-
----
-
-# 58. Mostrar cooldown
-
-Se o Grafana repetir a notificação:
+Fluxo:
 
 ```text
-SELF-HEALING ignored: cooldown active
+Infra_Apps
+    │
+    ├────► CI / DevSecOps
+    │
+    └────► Amazon ECR
+               │
+               ▼
+           GitOps Repo
+               │
+               ▼
+             ArgoCD
+               │
+               ▼
+          Amazon EKS
 ```
 
-Falar:
+---
 
-> "Notificações adicionais não geram novos restarts durante a janela de proteção."
+# 🧰 Tecnologias
+
+## Cloud
+
+- AWS
+- Amazon EKS
+- Amazon ECR
+- Amazon RDS PostgreSQL
+- Amazon ElastiCache Redis
+- Amazon DynamoDB
+- Amazon SQS
+- Amazon S3
+
+## Infrastructure as Code
+
+- Terraform
+
+## Aplicações
+
+- Go
+- Python
+- Flask
+- Gunicorn
+
+## Containers
+
+- Docker
+- Kubernetes
+
+## DevSecOps
+
+- GitHub Actions
+- Trivy
+- Gosec
+- Bandit
+- GolangCI-Lint
+
+## Observabilidade
+
+- OpenTelemetry
+- OTLP
+- Span Metrics
+- Prometheus
+- Grafana
+- Loki
+- New Relic
+
+## Incident Management
+
+- Grafana Alerting
+- PagerDuty
+- Discord
+
+## Automação
+
+- Python
+- Flask
+- Kubernetes API
+- RBAC
+- Self-Healing
 
 ---
 
-# 59. Encerramento
+# ✅ Principais Resultados
 
-Falar:
-
-> "Com isso, a Fase 4 acrescenta ao ToggleMaster uma camada completa de Observabilidade Total e Resposta Ativa.
->
-> OpenTelemetry padroniza e centraliza a telemetria, Prometheus e Loki fornecem métricas e logs, Grafana oferece visualização e Alerting, New Relic fornece APM e tracing distribuído e PagerDuty, Discord e Self-Healing fecham o ciclo de resposta operacional.
->
-> O resultado é uma plataforma com maior visibilidade, diagnóstico mais rápido e uma primeira capacidade automatizada de mitigação."
-
----
-
-# 60. Checklist final
-
-Não finalizar a gravação sem mostrar:
-
-- [ ] Contexto Fase 3 em menos de 1 minuto
-- [ ] Arquitetura Fase 4
-- [ ] Amazon EKS
-- [ ] ArgoCD
-- [ ] Prometheus
-- [ ] Grafana Dashboard
-- [ ] Loki
-- [ ] Logs reais
-- [ ] OTel Agent
-- [ ] OTel Collector
-- [ ] New Relic
-- [ ] Service Map 5/5
-- [ ] Chamada Evaluation
-- [ ] Distributed Trace
-- [ ] Firing
-- [ ] PagerDuty Incident
-- [ ] Discord
-- [ ] SELF-HEALING triggered
-- [ ] Pod reiniciando
-- [ ] Novo Pod Running
-- [ ] Cooldown explicado
+- Infraestrutura AWS reproduzível via Terraform
+- Amazon EKS criado via IaC
+- Cinco microsserviços executando em Kubernetes
+- Imagens instrumentadas com OpenTelemetry
+- Telemetria dos cinco serviços processada pelo OTel Collector
+- Métricas de aplicação derivadas dos traces
+- Distributed Tracing no New Relic
+- Integração com GitOps e ArgoCD
+- Self-Healing executado automaticamente a partir de alertas
+- RBAC com privilégio mínimo
+- Cooldown contra restart storm
 
 ---
 
-# 61. Não mostrar durante o vídeo
+# 📦 Repositórios
 
-Nunca mostrar valores de:
+A solução da Fase 4 é dividida em dois repositórios.
+
+## Infraestrutura e aplicações
 
 ```text
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-AWS_SESSION_TOKEN
-db_password
-NEW_RELIC_LICENSE_KEY
-PD_ROUTING_KEY
-DISCORD_WEBHOOK_URL
+TC_Fase4_Infra_Apps
 ```
 
-Não executar na gravação:
+Responsável por:
 
-```bash
-kubectl get secret ... -o yaml
-```
+- microsserviços;
+- Terraform;
+- Docker;
+- instrumentação;
+- CI/DevSecOps;
+- Self-Healing.
 
-Não abrir:
+## GitOps
 
 ```text
-academy.tfvars
+TC_Fase4_GitOps
 ```
 
-se o arquivo contiver senha.
+Responsável por:
+
+- manifestos Kubernetes;
+- ArgoCD;
+- Prometheus;
+- Grafana;
+- Loki;
+- OTel Collector;
+- OTel Agent;
+- Alerting;
+- configuração Kubernetes do Self-Healing.
 
 ---
 
-# 62. Se algum port-forward cair
+# 🏁 Conclusão
 
-## Grafana
+A Fase 4 transforma o ToggleMaster em uma plataforma capaz não apenas de ser provisionada e implantada automaticamente, mas também de **observar seu próprio comportamento e reagir a condições críticas**.
 
-```bash
-kubectl port-forward \
-  svc/grafana \
-  -n monitoring \
-  3000:80
-```
-
-## ArgoCD
-
-```bash
-kubectl port-forward \
-  svc/argocd-server \
-  -n argocd \
-  8080:443
-```
-
-## Loki
-
-```bash
-kubectl port-forward \
-  svc/loki \
-  -n monitoring \
-  3100:3100
-```
-
----
-
-# 63. Se algo falhar durante a gravação
-
-Não transformar o vídeo em troubleshooting.
-
-Procedimento:
+A integração entre OpenTelemetry, Prometheus, Grafana, Loki, New Relic, PagerDuty, Discord e Self-Healing estabelece uma arquitetura completa de:
 
 ```text
-Parar gravação
-   ↓
-Corrigir
-   ↓
-Validar
-   ↓
-Retomar do checkpoint
+Observabilidade
++
+Distributed Tracing
++
+Incident Management
++
+ChatOps
++
+Resposta Ativa
 ```
 
----
-
-# 64. Frases úteis para demonstrar conhecimento
-
-1. **OpenTelemetry padroniza telemetria, mas não é um backend de armazenamento.**
-2. **Collector e Agent possuem funções diferentes.**
-3. **DaemonSet garante coleta de logs em cada Node.**
-4. **Trace representa a operação completa e Span representa uma etapa.**
-5. **Service Map é agregado e Distributed Trace representa uma execução.**
-6. **Span Metrics reutiliza tracing para produzir métricas.**
-7. **P95 mostra melhor a cauda de latência do que uma média simples.**
-8. **Pending evita reação a picos passageiros.**
-9. **PagerDuty transforma o alerta técnico em incidente operacional.**
-10. **ChatOps leva a condição para o canal do time.**
-11. **RBAC limita a superfície de ação do Self-Healing.**
-12. **Cooldown reduz o risco de restart storm.**
-13. **Self-Healing é mitigação inicial, não substitui causa raiz.**
-14. **GitOps impede que dashboard e Alerting dependam de configuração manual efêmera.**
+O resultado é uma plataforma Cloud Native mais observável, rastreável, resiliente e alinhada às práticas modernas de DevOps e SRE.
